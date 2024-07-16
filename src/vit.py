@@ -16,6 +16,8 @@ class ViTConfig:
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
+# TODO finish implementation
+
 class ViTEmbeddings(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -31,6 +33,9 @@ class ViTSelfAttention(nn.Module):
         super.__init__()
 
         self.config = config
+        self.query = None
+        self.key = None
+        self.value = None
 
     def forward(self):
         pass
@@ -41,10 +46,13 @@ class ViTLayer(nn.Module):
         super.__init__()
 
         self.config = config
-        self.attention = ViTSelfAttention(self.config)
+        self.attention = nn.ModuleDict(dict(
+            attention = ViTSelfAttention(self.config),
+            output = None,                                    # TODO
+        ))
         self.intermediate = nn.ModuleDict(dict(
             dense = nn.Linear(self.config.n_embd, self.config.n_embd * 4),
-            act_fn = nn.GELU()                              # TODO check
+            act_fn = nn.GELU()                                # TODO check
         ))
         self.output = nn.Linear(self.config.n_embd * 4, self.config.n_embd)
         self.layernorm_before = nn.LayerNorm(self.config.n_embd)
@@ -83,7 +91,7 @@ class ViT(nn.Module):
         pass
 
     @staticmethod
-    def from_pretrained(self, x):
+    def from_pretrained(self):
         pass
 
     
