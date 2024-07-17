@@ -1,10 +1,12 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from torchvision.transforms.functional import pil_to_tensor
 
 import math
 
 from dataclasses import dataclass
+from datasets import load_dataset
 
 
 @dataclass
@@ -165,6 +167,14 @@ class ViT(nn.Module):
 
         return x
 
+    @staticmethod
+    def get_id2label(model_type):
+        from transformers import ViTForImageClassification
+
+        model_pretrained = ViTForImageClassification.from_pretrained(model_type)
+
+        return model_pretrained.config.id2label
+
 
     @staticmethod
     def from_pretrained(model_type):
@@ -205,16 +215,40 @@ class ViT(nn.Module):
             with torch.no_grad():
                 sd[k].copy_(sd_pretrained[k])
 
+        print("loading finished!")
+
         return model
 
     
+
+torch.manual_seed(42)
+torch.cuda.manual_seed(42)
+
 # attn = ViTSelfAttention(ViTConfig())
 
 # print(attn.transpose_for_scores(torch.zeros(1, 197, 192)).shape)
 
-model = ViT(ViTConfig()).from_pretrained('facebook/deit-tiny-patch16-224')
+model = ViT(ViTConfig()).from_pretrained('facebook/deit-tiny-patch16-224').eval().to(device)
 
-# test_tensor = torch.rand(1, 3, 224, 224)
+dataset = load_dataset("huggingface/cats-image", trust_remote_code=True)
+image = pil_to_tensor(dataset["test"]["image"][0].resize((224, 224))).unsqueeze(0).to(device)
+image = image.type(torch.float32) / 255.
+
+# print(image.shape)
+with torch.no_grad():
+    out = model(image)
+    print(out.shape)
+
+predicted_label = out.argmax(-1).item()
+
+# print(out)
+
+id2label = model.get_id2label('facebook/deit-tiny-patch16-224')
+print(id2label[predicted_label])
+
+# print(id2label)
+
+# print((torch.rand(1, 3, 224, 224)).dtype, (image).dtype)
 
 # out = model(test_tensor)
 
