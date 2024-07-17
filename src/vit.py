@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from datasets import load_dataset
 
 
+torch.manual_seed(42)
+torch.cuda.manual_seed(42)
+
+
 @dataclass
 class ViTConfig:
     n_layer: int = 12
@@ -54,7 +58,6 @@ class ViTEmbeddings(nn.Module):
         embeddings = torch.cat((cls_token, self.patch_embeddings(x)), dim=1) + self.position_embeddings  # make positional embeddings
 
         return embeddings
-
 
 
 class ViTSelfAttention(nn.Module):
@@ -175,7 +178,6 @@ class ViT(nn.Module):
 
         return model_pretrained.config.id2label
 
-
     @staticmethod
     def from_pretrained(model_type):
         assert model_type in {'facebook/deit-tiny-patch16-224'} # single model for now
@@ -195,13 +197,14 @@ class ViT(nn.Module):
         config = ViTConfig(**config_args)
         model = ViT(config)
         sd = model.state_dict()
-        sd_keys = sd.keys()
 
         model_pretrained = ViTForImageClassification.from_pretrained(model_type)
         sd_pretrained = model_pretrained.state_dict()
         sd_keys_pretrained = sd_pretrained.keys()
 
         """
+        sd_keys = sd.keys()
+
         print(set(sd_keys) == set(model_pretrained.state_dict().keys())) # check if names of layers match
 
         for k, v in sd.items():                           # check shapes of layers to match
@@ -221,41 +224,19 @@ class ViT(nn.Module):
 
     
 
-torch.manual_seed(42)
-torch.cuda.manual_seed(42)
+if __name__ == "__main__":
+    
+    model = ViT(ViTConfig()).from_pretrained('facebook/deit-tiny-patch16-224').eval().to(device)
 
-# attn = ViTSelfAttention(ViTConfig())
+    dataset = load_dataset("huggingface/cats-image", trust_remote_code=True)
+    image = pil_to_tensor(dataset["test"]["image"][0].resize((224, 224))).unsqueeze(0).to(device)
+    image = image.type(torch.float32) / 255.
 
-# print(attn.transpose_for_scores(torch.zeros(1, 197, 192)).shape)
+    with torch.no_grad():
+        out = model(image)
+        print(out.shape)
 
-model = ViT(ViTConfig()).from_pretrained('facebook/deit-tiny-patch16-224').eval().to(device)
+    predicted_label = out.argmax(-1).item()
 
-dataset = load_dataset("huggingface/cats-image", trust_remote_code=True)
-image = pil_to_tensor(dataset["test"]["image"][0].resize((224, 224))).unsqueeze(0).to(device)
-image = image.type(torch.float32) / 255.
-
-# print(image.shape)
-with torch.no_grad():
-    out = model(image)
-    print(out.shape)
-
-predicted_label = out.argmax(-1).item()
-
-# print(out)
-
-id2label = model.get_id2label('facebook/deit-tiny-patch16-224')
-print(id2label[predicted_label])
-
-# print(id2label)
-
-# print((torch.rand(1, 3, 224, 224)).dtype, (image).dtype)
-
-# out = model(test_tensor)
-
-# print(out.shape)
-
-# embs = ViTPatchEmbedding(ViTConfig())
-
-# out = embs.projection(test_tensor)
-
-# print(out.shape)
+    id2label = model.get_id2label('facebook/deit-tiny-patch16-224')
+    print(id2label[predicted_label])
