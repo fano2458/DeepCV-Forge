@@ -88,12 +88,12 @@ class ViTSelfAttention(nn.Module):
         return context_layer
 
 
-class ViTSelfOutput(nn.Module):
-    def __init__(self, config):
+class ViTOutput(nn.Module):
+    def __init__(self, config, type='self'):
         super().__init__()
 
         self.config = config
-        self.dense = nn.Linear(self.config.d_size, self.config.d_size)
+        self.dense = nn.Linear(self.config.d_size, self.config.d_size) if type == 'self' else nn.Linear(self.config.d_size * 4, self.config.d_size)
 
     def forward(self, x):
         return self.dense(x)
@@ -106,13 +106,14 @@ class ViTLayer(nn.Module):
         self.config = config
         self.attention = nn.ModuleDict(dict(
             attention = ViTSelfAttention(self.config),
-            output = ViTSelfOutput(self.config),
+            output = ViTOutput(self.config, type='self'),
         ))
         self.intermediate = nn.ModuleDict(dict(
             dense = nn.Linear(self.config.d_size, self.config.d_size * 4),
             act_fn = nn.GELU()
         ))
-        self.output = nn.Linear(self.config.d_size * 4, self.config.d_size)
+        # self.output = nn.Linear(self.config.d_size * 4, self.config.d_size)
+        self.output = ViTOutput(self.config, type="output")
         self.layernorm_before = nn.LayerNorm(self.config.d_size)
         self.layernorm_after = nn.LayerNorm(self.config.d_size)
 
@@ -166,18 +167,61 @@ class ViT(nn.Module):
 
 
     @staticmethod
-    def from_pretrained(self):
-        pass
+    def from_pretrained(model_type):
+        assert model_type in {'facebook/deit-tiny-patch16-224'} # single model for now
+
+        from transformers import ViTForImageClassification
+        print("loading weights from", model_type)
+
+        config_args = {
+            'facebook/deit-tiny-patch16-224': dict(n_layer=12, n_head=3, d_size=192),
+        }[model_type]
+
+        config_args["n_class"] = 1000
+        config_args["patch_size"] = 16
+        config_args["image_size"] = 224
+        config_args["num_channels"] = 3
+
+        config = ViTConfig(**config_args)
+        model = ViT(config)
+        sd = model.state_dict()
+        sd_keys = sd.keys()
+
+        model_pretrained = ViTForImageClassification.from_pretrained(model_type)
+        sd_pretrained = model_pretrained.state_dict()
+        sd_keys_pretrained = sd_pretrained.keys()
+
+        """
+        print(set(sd_keys) == set(model_pretrained.state_dict().keys())) # check if names of layers match
+
+        for k, v in sd.items():                           # check shapes of layers to match
+            if v.shape != sd_pretrained[k].shape:
+                print("Shapes do not match at", k)
+        """
+
+        # copy weights
+        for k in sd_keys_pretrained:
+            assert sd[k].shape == sd_pretrained[k].shape
+            with torch.no_grad():
+                sd[k].copy_(sd_pretrained[k])
+
+        return model
 
     
 # attn = ViTSelfAttention(ViTConfig())
 
 # print(attn.transpose_for_scores(torch.zeros(1, 197, 192)).shape)
 
-model = ViT(ViTConfig())
+model = ViT(ViTConfig()).from_pretrained('facebook/deit-tiny-patch16-224')
 
-test_tensor = torch.rand(1, 3, 224, 224)
+# test_tensor = torch.rand(1, 3, 224, 224)
 
-out = model(test_tensor)
+# out = model(test_tensor)
 
-print(out.shape)
+# print(out.shape)
+
+# embs = ViTPatchEmbedding(ViTConfig())
+
+# out = embs.projection(test_tensor)
+
+# print(out.shape)
