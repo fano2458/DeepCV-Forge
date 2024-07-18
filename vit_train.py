@@ -20,14 +20,16 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # for step in range(100):
 #     begin_time = time.time()
 #     optimizer.zero_grad()
-
+#     loss_accum = 0.0
 #     # grad accum
 #     for micro_step in range(grad_accum_steps):
 #         test_tensor = torch.rand((batch_size, 3, 224, 224)).to(device)         # emulate batch of batch_size (3 channel) images
 #         with torch.autocast(device_type=device, dtype=torch.bfloat16):         # to enable BF16 precision  ### 2
 #             out = model(test_tensor)
 #             loss = None
+#         
 #         loss = loss / grad_accum_steps
+#         loss_accum += loss.detach()
 #         loss.backward()
 
 #     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
