@@ -80,12 +80,13 @@ class ViTSelfAttention(nn.Module):
         query_layer = self.transpose_for_scores(self.query(x))
         value_layer = self.transpose_for_scores(self.value(x))
 
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.config.d_size // self.config.n_head)
+        # attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        # attention_scores = attention_scores / math.sqrt(self.config.d_size // self.config.n_head)
+        # attention_probs = F.softmax(attention_scores, dim=-1)
+        # context_layer = torch.matmul(attention_probs, value_layer)
 
-        attention_probs = F.softmax(attention_scores, dim=-1)
+        context_layer = F.scaled_dot_product_attention(query_layer, key_layer, value_layer, is_causal=True)  # utilize FlashAttention ### 3
 
-        context_layer = torch.matmul(attention_probs, value_layer)
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.config.d_size,)
         context_layer = context_layer.view(new_context_layer_shape)
