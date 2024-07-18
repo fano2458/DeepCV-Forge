@@ -1,15 +1,19 @@
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
 import torchvision
 from torchinfo import summary
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 
+from transformers import ViTForImageClassification
+
+from tqdm import tqdm
 import time
 import math
 import inspect
 
-from src.vit import ViT
+from src.vit import ViT, ViTConfig
 
 
 num_epoch = 10
@@ -18,7 +22,7 @@ min_lr = max_lr * 0.1
 warmup_steps = 10
 max_steps = 50
 # total_batch_size = 256
-batch_size = 64
+batch_size = 128
 
 # assert total_batch_size % batch_size == 0, 'make sure that total_batch_size is divisible by batch_size'
 # grad_accum_steps = total_batch_size / batch_size
@@ -57,7 +61,7 @@ def get_lr(step):
 
 
 def main():
-    # torch.set_float32_matmul_precision('high')  # to enable TF32 precision
+    torch.set_float32_matmul_precision('high')  # to enable TF32 precision
 
     train_transform = torchvision.transforms.Compose([
         torchvision.transforms.RandomHorizontalFlip(p=0.5),  # Similar to HorizontalFlip
@@ -88,45 +92,61 @@ def main():
     dataloader_valid = DataLoader(val_set, batch_size=batch_size, shuffle=False, num_workers=0, drop_last=True)
     dataloader_test = DataLoader(dataset_test, batch_size=batch_size, shuffle=False, num_workers=0)
 
+    classes = ('plane', 'car', 'bird', 'cat',
+           'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
     model = ViT.from_pretrained('facebook/deit-tiny-patch16-224', n_class=10).to(device) # load pretrained model
-    model.requires_grad_(False)                                                          # freeze all parameters
-    model.classifier.requires_grad_(True)                                                # set last layer to be trainable
+    # model.requires_grad_(False)                                                          # freeze all parameters
+    # model.classifier.requires_grad_(True)                                                # set last layer to be trainable
+    # model = Net().to(device)
 
-    summary(model, input_size=(1, 3, 224, 224), 
-            col_names=['input_size', 'output_size', 'num_params', 'trainable'], 
-            device=device, col_width=20, depth=4)
+    # summary(model, input_size=(1, 3, 32, 32), 
+    #         col_names=['input_size', 'output_size', 'num_params', 'trainable'], 
+    #         device=device, col_width=20, depth=4)
     
-    # model = torch.compile(model).train()
-    model.train()
-    optimizer = configure_optimizer(model=model, weight_decay=0.01,
-                                    learning_rate=max_lr, device=device)
-    criterion = nn.CrossEntropyLoss()
+    # model = ViT(ViTConfig(n_class=10, patch_size=32)).to(device).train()
+    # print(model.parameters())
+    # model = torch.compile(model)
+    # model.train()
+    # optimizer = configure_optimizer(model=model, weight_decay=0.01,
+    #                                 learning_rate=max_lr, device=device)
+    # model = ViTForImageClassification.from_pretrained("facebook/deit-tiny-patch16-224", num_labels=10, ignore_mismatched_sizes=True).to(device)
+    # model = ViT(ViTConfig(n_class=10)).to(device)
+    model = torch.compile(model)
+    # model.classifier = nn.Linear(192, 10)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+    criterion = nn.CrossEntropyLoss().cuda()
 
-    for step in range(1):
+    for step in range(10):
         # train
         train_loss = 0.0
-        for data, target in dataloader_train:
+        for data, target in tqdm(dataloader_train):
             data, target = data.to(device), target.to(device)
+
+            # print(target)
+            # print(model(data))
+
+            # import sys; sys.exit(0)
             # print(data.shape)
             optimizer.zero_grad()
-            # with torch.autocast(device_type=device, dtype=torch.bfloat16):
-            out = model(data)
-            loss = criterion(target, out)
-                
+            with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                out = model(data)
+
+            loss = criterion(out, target)
             loss.backward()
+
             train_loss = loss.detach()
 
-            norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            # norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
-            lr = get_lr(step) # should change with batch
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr
+            # lr = get_lr(step) # should change with batch
+            # for param_group in optimizer.param_groups:
+            #     param_group['lr'] = lr
 
             optimizer.step()
             torch.cuda.synchronize()
 
-            print(f"{train_loss:2f}")
+        print(f"{train_loss:2f}")
 
         # eval
 
