@@ -55,6 +55,7 @@ class ViTEmbeddings(nn.Module):
     def forward(self, x):
         cls_token = self.cls_token.expand(x.shape[0], -1, -1)                  # add cls_token
         # print(torch.cat((cls_token,self.patch_embeddings(x)), dim=1).shape)
+        # print(cls_token.shape, self.patch_embeddings(x).shape)
         embeddings = torch.cat((cls_token, self.patch_embeddings(x)), dim=1) + self.position_embeddings  # make positional embeddings
 
         return embeddings
@@ -180,17 +181,18 @@ class ViT(nn.Module):
         return model_pretrained.config.id2label
 
     @staticmethod
-    def from_pretrained(model_type):
+    def from_pretrained(model_type, n_class=None):
         assert model_type in {'facebook/deit-tiny-patch16-224'} # single model for now
 
         from transformers import ViTForImageClassification
         print("loading weights from", model_type)
 
         config_args = {
-            'facebook/deit-tiny-patch16-224': dict(n_layer=12, n_head=3, d_size=192),
+            'facebook/deit-tiny-patch16-224': dict(n_layer=12, n_head=3, d_size=192, n_class=1000),
         }[model_type]
 
-        config_args["n_class"] = 1000
+        if n_class is not None:
+            config_args["n_class"] = n_class
         config_args["patch_size"] = 16
         config_args["image_size"] = 224
         config_args["num_channels"] = 3
@@ -215,9 +217,12 @@ class ViT(nn.Module):
 
         # copy weights
         for k in sd_keys_pretrained:
-            assert sd[k].shape == sd_pretrained[k].shape
-            with torch.no_grad():
-                sd[k].copy_(sd_pretrained[k])
+            if k == 'classifier.weight' or k == 'classifier.bias':
+                print(f"initializing {k} from scratch")
+            else:
+                assert sd[k].shape == sd_pretrained[k].shape, f'at {k}'
+                with torch.no_grad():
+                    sd[k].copy_(sd_pretrained[k])
 
         print("loading finished!")
 
